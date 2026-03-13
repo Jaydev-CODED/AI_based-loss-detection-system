@@ -1,4 +1,4 @@
-# Welcome to your Lovable project
+# Welcome to MY INVENTORY LOSS website build!
 
 ## Project info
 
