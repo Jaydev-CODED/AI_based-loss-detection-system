@@ -1,6 +1,7 @@
-import { riskScoreData, predictiveRestockData, warehouseHeatmapData } from "@/data/mockData";
-import { ShieldAlert, TrendingUp, TrendingDown, Minus, PackageCheck, MapPin } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ShieldAlert, TrendingUp, TrendingDown, Minus, PackageCheck, MapPin, Loader2, ShoppingCart } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const trendIcons = { up: TrendingUp, down: TrendingDown, stable: Minus };
 const trendColors = { up: "text-destructive", down: "text-success", stable: "text-muted-foreground" };
@@ -20,15 +21,70 @@ const getHeatColor = (intensity: number) => {
   return "bg-muted/30 text-muted-foreground";
 };
 
-const urgencyBadge = {
+const urgencyBadge: Record<string, string> = {
   critical: "bg-destructive/20 text-destructive",
   warning: "bg-warning/20 text-warning",
   normal: "bg-success/20 text-success",
 };
 
+type RiskScoreItem = { id: string; name: string; riskScore: number; trend: 'up' | 'down' | 'stable'; factors: string[] };
+type PredictiveRestockItem = { id: string; name: string; currentStock: number; dailyUsage: number; daysUntilEmpty: number; suggestedOrder: number; urgency: string };
+type HeatmapItem = { warehouse: string; zone: string; intensity: number; lossCount: number };
+
 const AdvancedFeaturesTab = () => {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['advanced'],
+    queryFn: async () => {
+      const res = await fetch('/api/advanced');
+      return res.json();
+    }
+  });
+
   const [selectedWarehouse, setSelectedWarehouse] = useState("WH-A");
-  const zones = warehouseHeatmapData.filter((z) => z.warehouse === selectedWarehouse);
+  const [orderingId, setOrderingId] = useState<string | null>(null);
+
+  const quickOrderMutation = useMutation({
+    mutationFn: async ({ productId, quantity }: { productId: string; quantity: number }) => {
+      const res = await fetch('/api/advanced/quick-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, quantity })
+      });
+      if (!res.ok) throw new Error('Quick order failed');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['advanced'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['tracking'] });
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast.success(`Quick order placed: ${data.order.quantity} units of ${data.product.name}`);
+      setOrderingId(null);
+    },
+    onError: () => {
+      toast.error("Failed to place quick order");
+      setOrderingId(null);
+    }
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const { riskScoreData = [], predictiveRestockData = [], warehouseHeatmapData = [] } = data || {};
+  const zones = warehouseHeatmapData.filter((z: HeatmapItem) => z.warehouse === selectedWarehouse);
+
+  const handleQuickOrder = (item: PredictiveRestockItem) => {
+    if (item.suggestedOrder <= 0) return;
+    setOrderingId(item.id);
+    quickOrderMutation.mutate({ productId: item.id, quantity: item.suggestedOrder });
+  };
 
   return (
     <div className="space-y-6">
@@ -39,8 +95,8 @@ const AdvancedFeaturesTab = () => {
           <h3 className="text-lg font-semibold text-foreground">AI Risk Scores</h3>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {riskScoreData.map((item, i) => {
-            const TrendIcon = trendIcons[item.trend];
+          {riskScoreData.map((item: RiskScoreItem, i: number) => {
+            const TrendIcon = trendIcons[item.trend] || Minus;
             return (
               <div
                 key={item.id}
@@ -49,7 +105,7 @@ const AdvancedFeaturesTab = () => {
               >
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                  <TrendIcon className={`w-4 h-4 ${trendColors[item.trend]}`} />
+                  <TrendIcon className={`w-4 h-4 shrink-0 ${trendColors[item.trend] || trendColors.stable}`} />
                 </div>
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-2xl font-bold text-foreground">{item.riskScore}</span>
@@ -59,7 +115,7 @@ const AdvancedFeaturesTab = () => {
                   <div className={`h-full rounded-full transition-all duration-1000 ${getRiskColor(item.riskScore)}`} style={{ width: `${item.riskScore}%` }} />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {item.factors.map((f) => (
+                  {item.factors.map((f: string) => (
                     <span key={f} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{f}</span>
                   ))}
                 </div>
@@ -79,13 +135,13 @@ const AdvancedFeaturesTab = () => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
-                {["Product", "Current Stock", "Daily Usage", "Days Until Empty", "Suggested Order", "Urgency"].map((h) => (
+                {["Product", "Current Stock", "Daily Usage", "Days Until Empty", "Suggested Order", "Urgency", "Action"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-muted-foreground font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {predictiveRestockData.map((item, i) => (
+              {predictiveRestockData.map((item: PredictiveRestockItem, i: number) => (
                 <tr key={item.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors" style={{ animation: `slide-up 0.3s ease-out ${i * 0.05}s forwards`, opacity: 0 }}>
                   <td className="px-4 py-3 text-foreground font-medium">{item.name}</td>
                   <td className="px-4 py-3 text-foreground">{item.currentStock}</td>
@@ -97,7 +153,25 @@ const AdvancedFeaturesTab = () => {
                   </td>
                   <td className="px-4 py-3 text-foreground font-semibold">{item.suggestedOrder > 0 ? `${item.suggestedOrder} units` : "—"}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${urgencyBadge[item.urgency]}`}>{item.urgency}</span>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium capitalize ${urgencyBadge[item.urgency] || urgencyBadge.normal}`}>{item.urgency}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.suggestedOrder > 0 ? (
+                      <button
+                        onClick={() => handleQuickOrder(item)}
+                        disabled={quickOrderMutation.isPending && orderingId === item.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 text-xs font-medium transition-colors disabled:opacity-50"
+                      >
+                        {quickOrderMutation.isPending && orderingId === item.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                        )}
+                        Quick Order
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No action needed</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -124,11 +198,12 @@ const AdvancedFeaturesTab = () => {
           </select>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {zones.map((zone, i) => (
+          {zones.map((zone: HeatmapItem, i: number) => (
             <div
               key={zone.zone}
-              className={`rounded-xl p-6 text-center transition-all hover:scale-105 ${getHeatColor(zone.intensity)}`}
+              className={`rounded-xl p-6 text-center transition-all hover:scale-105 cursor-pointer ${getHeatColor(zone.intensity)}`}
               style={{ animation: `slide-up 0.3s ease-out ${i * 0.08}s forwards`, opacity: 0 }}
+              title={`${zone.lossCount} loss events in zone ${zone.zone}`}
             >
               <p className="text-lg font-bold">{zone.zone}</p>
               <p className="text-sm mt-1">{zone.lossCount} losses</p>

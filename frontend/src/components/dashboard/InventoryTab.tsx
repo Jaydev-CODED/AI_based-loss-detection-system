@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { inventoryData as initialData } from "@/data/mockData";
-import { Search, Pencil, Trash2, Plus, X, Check } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Search, Pencil, Trash2, Plus, X, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-type Product = typeof initialData[0];
+type Product = { id: string, name: string, category: string, stockIn: number, stockOut: number, currentStock: number, status: string, warehouse: string };
 
 const statusStyles: Record<string, string> = {
   Normal: "bg-success/20 text-success",
@@ -12,7 +12,59 @@ const statusStyles: Record<string, string> = {
 };
 
 const InventoryTab = () => {
-  const [products, setProducts] = useState<Product[]>([...initialData]);
+  const queryClient = useQueryClient();
+  const { data: products = [], isLoading } = useQuery<Product[]>({
+    queryKey: ['inventory'],
+    queryFn: async () => {
+      const res = await fetch('/api/inventory');
+      return res.json();
+    }
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (newProduct: any) => {
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct)
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success("Product added successfully");
+      setShowAdd(false);
+      setNewProduct({ name: "", category: "Electronics", stockIn: 0, stockOut: 0, warehouse: "WH-A" });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (product: Product) => {
+      const res = await fetch(`/api/inventory/${product.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(product)
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success("Product updated successfully");
+      setEditingId(null);
+      setEditData(null);
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success("Product deleted successfully");
+    }
+  });
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -30,11 +82,6 @@ const InventoryTab = () => {
     return matchSearch && matchFilter && matchCategory;
   });
 
-  const handleDelete = (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    toast.success("Product deleted successfully");
-  };
-
   const handleEdit = (product: Product) => {
     setEditingId(product.id);
     setEditData({ ...product });
@@ -42,26 +89,24 @@ const InventoryTab = () => {
 
   const handleSaveEdit = () => {
     if (!editData) return;
-    setProducts((prev) => prev.map((p) => (p.id === editData.id ? editData : p)));
-    setEditingId(null);
-    setEditData(null);
-    toast.success("Product updated successfully");
+    updateMutation.mutate(editData);
   };
 
   const handleAddProduct = () => {
-    const id = `PRD-${String(products.length + 1).padStart(3, "0")}`;
-    const currentStock = newProduct.stockIn - newProduct.stockOut;
-    const status = currentStock <= 20 ? "Critical" : currentStock <= 100 ? "Warning" : "Normal";
-    setProducts((prev) => [...prev, { id, ...newProduct, currentStock, status }]);
-    setNewProduct({ name: "", category: "Electronics", stockIn: 0, stockOut: 0, warehouse: "WH-A" });
-    setShowAdd(false);
-    toast.success("Product added successfully");
+    addMutation.mutate(newProduct);
   };
 
   const fieldClass = "w-full px-3 py-1.5 rounded-md bg-muted border border-border/50 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50";
 
   return (
     <div className="space-y-4">
+      {isLoading && (
+        <div className="flex items-center justify-center p-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && (
+        <>
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -99,7 +144,7 @@ const InventoryTab = () => {
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 rounded-md bg-muted text-foreground text-sm hover:bg-muted/80">Cancel</button>
-            <button onClick={handleAddProduct} disabled={!newProduct.name} className="px-3 py-1.5 rounded-md gradient-bg text-primary-foreground text-sm font-medium disabled:opacity-50">Add</button>
+            <button onClick={handleAddProduct} disabled={!newProduct.name || addMutation.isPending} className="px-3 py-1.5 rounded-md gradient-bg text-primary-foreground text-sm font-medium disabled:opacity-50">Add</button>
           </div>
         </div>
       )}
@@ -146,13 +191,13 @@ const InventoryTab = () => {
                     <div className="flex gap-1.5">
                       {editingId === item.id ? (
                         <>
-                          <button onClick={handleSaveEdit} className="p-1.5 rounded-md hover:bg-success/20 transition-colors text-success"><Check className="w-3.5 h-3.5" /></button>
+                          <button onClick={handleSaveEdit} disabled={updateMutation.isPending} className="p-1.5 rounded-md hover:bg-success/20 transition-colors text-success"><Check className="w-3.5 h-3.5" /></button>
                           <button onClick={() => { setEditingId(null); setEditData(null); }} className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground"><X className="w-3.5 h-3.5" /></button>
                         </>
                       ) : (
                         <>
                           <button onClick={() => handleEdit(item)} className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded-md hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => deleteMutation.mutate(item.id)} disabled={deleteMutation.isPending} className="p-1.5 rounded-md hover:bg-destructive/20 transition-colors text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
                         </>
                       )}
                     </div>
@@ -163,6 +208,8 @@ const InventoryTab = () => {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

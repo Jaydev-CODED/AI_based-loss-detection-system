@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Package, PlusCircle, Brain, FileBarChart, Bell,
   Settings, ShieldCheck, LogOut, BarChart3, ShieldAlert, MapPin, Zap,
-  Menu, X
+  Menu, X, ShoppingCart, ClipboardCheck
 } from "lucide-react";
 import DashboardTab from "@/components/dashboard/DashboardTab";
 import InventoryTab from "@/components/dashboard/InventoryTab";
@@ -16,12 +16,15 @@ import AnalyticsTab from "@/components/dashboard/AnalyticsTab";
 import PreventionTab from "@/components/dashboard/PreventionTab";
 import ProductTrackingTab from "@/components/dashboard/ProductTrackingTab";
 import AdvancedFeaturesTab from "@/components/dashboard/AdvancedFeaturesTab";
-import ChatBot from "@/components/ChatBot";
+import OrderTab from "@/components/dashboard/OrderTab";
+import StockAuditTab from "@/components/dashboard/StockAuditTab";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "add", label: "Add Product", icon: PlusCircle },
+  { id: "order", label: "Order Items", icon: ShoppingCart },
+  { id: "audit", label: "Stock Audit", icon: ClipboardCheck },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "loss", label: "Loss Detection", icon: Brain },
   { id: "prevention", label: "Prevention", icon: ShieldAlert },
@@ -36,6 +39,8 @@ const tabContent: Record<string, React.ReactNode> = {
   dashboard: <DashboardTab />,
   inventory: <InventoryTab />,
   add: <AddProductTab />,
+  order: <OrderTab />,
+  audit: <StockAuditTab />,
   analytics: <AnalyticsTab />,
   loss: <LossDetectionTab />,
   prevention: <PreventionTab />,
@@ -139,9 +144,6 @@ const Dashboard = () => {
           </div>
         </main>
       </div>
-
-      {/* AI Chatbot */}
-      <ChatBot />
     </div>
   );
 };
